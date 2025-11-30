@@ -109,12 +109,29 @@ def save_to_file() -> None:
     This writes to the local filesystem only (local mode). In uploaded (online) mode
     this function should not be called to persist to server storage.
     """
-    db_path = st.session_state.get("db_path", os.path.expanduser("~/Desktop/cards.json"))
+    # Prefer reading the current input widget value so changes to the text input are respected
+    db_path = st.session_state.get("db_path_input", os.path.expanduser("~/Desktop/cards.json"))
+    # Ensure parent directory exists (attempt to create it). On hosted services this may fail.
+    parent = os.path.dirname(os.path.abspath(db_path))
+    try:
+        if parent and not os.path.exists(parent):
+            os.makedirs(parent, exist_ok=True)
+    except Exception as e:
+        st.error(f"❌ Cannot create directory for {db_path}: {e}")
+        return
+
     try:
         save_cards(db_path, st.session_state.cards)
         st.session_state.save_message = f"✅ Cards saved to {db_path}"
     except Exception as e:
-        st.error(f"❌ Error saving: {e}")
+        # Provide a clearer message for common server-side situations
+        if isinstance(e, FileNotFoundError):
+            st.error(
+                f"❌ Error saving: target path {db_path} not found. On hosted deployments (Streamlit Cloud) writing to \"~/Desktop\" may not be allowed.\n"
+                "Use the upload/download flow instead, or choose a writable local path when running locally."
+            )
+        else:
+            st.error(f"❌ Error saving: {e}")
 
 
 def main() -> None:
@@ -260,10 +277,11 @@ def main() -> None:
 
     with col2:
         if st.button("Save", key="btn_save"):
-            if st.session_state.get("mode") == "local":
-                save_to_file()
-            else:
+            # If an uploaded file is present in this run, treat as uploaded/online mode
+            if uploaded_file is not None:
                 st.info("Uploaded mode: changes are in-memory only. Use the Download button to save a copy locally.")
+            else:
+                save_to_file()
 
     # Display save message if set
     if st.session_state.save_message:
