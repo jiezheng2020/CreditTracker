@@ -140,14 +140,47 @@ def main() -> None:
     st.title("💳 Credit Card Welcome Bonus Tracker")
     st.markdown("Track your credit card welcome offers and bonus points in one place.")
 
+    # OS detection for correct file paths - store in session_state to trigger updates
+    if "os_selection" not in st.session_state:
+        st.session_state.os_selection = "Windows"
+
+    st.sidebar.header("⚙️ Settings")
+    os_selection = st.sidebar.radio(
+        "Select your operating system:",
+        ["Windows", "Mac"],
+        key="os_selection"
+    )
+
+    # Determine DEFAULT_DB_PATH based on OS selection (use session_state so changes trigger rerun)
+    if st.session_state.os_selection == "Windows":
+        DEFAULT_DB_PATH = os.path.expanduser("~/Desktop/cards.json")
+    else:  # Mac
+        DEFAULT_DB_PATH = os.path.expanduser("~/Library/Application Support/CardTracker/cards.json")
+
     # Mode selection: uploaded file (online) OR local DB path
-    DEFAULT_DB_PATH = os.path.expanduser("~/Desktop/cards.json")
-    st.markdown("**Data source** — choose a local file path (desktop) or upload your `cards.json`.")
-    col_mode_1, col_mode_2 = st.columns([3, 2])
+    st.markdown("## 📂 Data Source")
+    st.markdown("**Choose how to store your cards:**")
+
+    col_mode_1, col_mode_2 = st.columns([1, 1])
     with col_mode_1:
-        db_path_input = st.text_input("Database file path (local mode)", value=DEFAULT_DB_PATH, key="db_path_input")
+        st.subheader("💾 Local File")
+        st.markdown("Save to your computer")
+        db_path_input = st.text_input(
+            "File path (default: " + ("Desktop" if st.session_state.os_selection == "Windows" else "Application Support") + ")",
+            value=DEFAULT_DB_PATH,
+            key="db_path_input",
+            help="Recommended for local use"
+        )
+
     with col_mode_2:
-        uploaded_file = st.file_uploader("Upload your cards.json (online mode)", type=["json"], key="uploaded_file")
+        st.subheader("☁️ Upload & Download")
+        st.markdown("Use your own JSON file")
+        uploaded_file = st.file_uploader(
+            "Upload your cards.json",
+            type=["json"],
+            key="uploaded_file",
+            help="For sharing or using online"
+        )
 
     # Initialize or update session_state.cards depending on mode
     if "cards" not in st.session_state:
@@ -273,24 +306,12 @@ def main() -> None:
             st.error("Selection out of range")
 
     with col1:
-        st.button("Add Card", key="btn_add", on_click=on_add)
+        st.button("➕ Add Card", key="btn_add", on_click=on_add, use_container_width=True)
 
-    with col2:
-        if st.button("Save", key="btn_save"):
-            # If an uploaded file is present in this run, treat as uploaded/online mode
-            if uploaded_file is not None:
-                st.info("Uploaded mode: changes are in-memory only. Use the Download button to save a copy locally.")
-            else:
-                save_to_file()
-
-    # Display save message if set
-    if st.session_state.save_message:
-        st.success(st.session_state.save_message)
-        st.session_state.save_message = None
-
-    # Simple delete UI
+    # Delete UI section
     if st.session_state.cards:
-        st.header("Delete Card")
+        st.markdown("---")
+        st.header("🗑️ Delete Card")
         # Prepare options as index strings so selection is stable
         options = [f"{i}: {c['card_name']} — {c['welcome_points']} pts — {c['opened_date']}" for i, c in enumerate(st.session_state.cards)]
         # store choice as the index string prefix (we'll parse index)
@@ -302,31 +323,62 @@ def main() -> None:
             choice_idx = None
         # expose to session_state for callback
         st.session_state["delete_choice"] = choice_idx
-        if st.button("Delete Selected", key="btn_delete", on_click=on_delete):
-            # on_delete runs via callback; rerun to refresh UI
-            st.experimental_rerun()
 
-    # If running with an uploaded file, offer a download button so users can save their updated JSON
-    if st.session_state.get("mode") == "uploaded":
+        col_delete_1, col_delete_2 = st.columns([1, 3])
+        with col_delete_1:
+            if st.button("Delete", key="btn_delete", on_click=on_delete, use_container_width=True):
+                # on_delete runs via callback; rerun to refresh UI
+                st.experimental_rerun()
+        with col_delete_2:
+            st.caption("⚠️ This action cannot be undone")
+
+    # Save/Download section - PROMINENT
+    st.markdown("---")
+    st.header("💾 Save Your Data")
+
+    # Display save message if set
+    if st.session_state.save_message:
+        st.success(st.session_state.save_message)
+        st.session_state.save_message = None
+
+    if uploaded_file is not None:
+        # UPLOADED MODE - Download is the primary action
+        st.markdown("### 📥 Download Mode")
+        st.markdown("Your changes are saved in this session. Download your updated file:")
         try:
             json_text = json.dumps(st.session_state.cards, indent=2)
         except Exception:
             json_text = "[]"
-        st.download_button(
-            label="Download updated cards.json",
-            data=json_text,
-            file_name="cards.json",
-            mime="application/json",
-            key="download_json",
-        )
-        st.info("Uploaded mode: changes are kept in this session and can be downloaded. They are not saved to the server.")
+
+        col_dl_1, col_dl_2 = st.columns([2, 1])
+        with col_dl_1:
+            st.download_button(
+                label="⬇️ Download updated cards.json",
+                data=json_text,
+                file_name="cards.json",
+                mime="application/json",
+                key="download_json",
+                use_container_width=True,
+            )
+        with col_dl_2:
+            if st.button("ℹ️ Info", key="info_uploaded"):
+                st.info("💡 Your changes stay in this browser session only. Download to save your file locally.")
     else:
-        # show active local DB path
-        dbp = st.session_state.get("db_path", os.path.expanduser("~/Desktop/cards.json"))
-        st.caption(f"Data is stored locally at: {dbp}")
+        # LOCAL MODE - Save to file is the primary action
+        st.markdown("### 💿 Local File Mode")
+        st.markdown(f"Saving to: `{st.session_state.get('db_path', DEFAULT_DB_PATH)}`")
+
+        col_save_1, col_save_2 = st.columns([2, 1])
+        with col_save_1:
+            if st.button("💾 Save to Local File", key="btn_save", use_container_width=True):
+                save_to_file()
+        with col_save_2:
+            if st.button("ℹ️ Info", key="info_local"):
+                st.info("💡 Your cards are saved to your computer whenever you click 'Save to Local File'.")
 
     # Footer
     st.divider()
+    st.caption("💳 Credit Card Welcome Bonus Tracker — Track your welcome offers easily!")
 
 
 if __name__ == "__main__":
