@@ -55,6 +55,8 @@ _CUSTOM_CSS = """
     }
     .st-emotion-cache-155jwzh {
         background-color: #005DAA;}
+    .st-emotion-cache-1fi65ho {
+        color: #000;}
     summary.st-emotion-cache-11ofl8m.e1326t814 {
         background-color: #005DAA;
         color: white;}
@@ -243,7 +245,8 @@ def save_to_file() -> None:
             if os_sel == "Windows"
             else os.path.expanduser("~/Library/Application Support/CardTracker/cards.json")
         )
-        db_path = st.session_state.get("db_path", default_path)
+        # Prefer any user-edited input field value, then session_state, then default
+        db_path = st.session_state.get("db_path_input") or st.session_state.get("db_path") or default_path
 
         json_export = export_json_data(st.session_state.get("current_cards", []), st.session_state.get("wishlist_cards", []))
         # Ensure parent directory exists
@@ -255,9 +258,46 @@ def save_to_file() -> None:
             f.write(json_export)
 
         st.session_state.save_message = f"Saved to {db_path}"
+        # Persist the chosen path to config so future runs auto-load it
+        st.session_state.db_path = db_path
+        try:
+            save_config({"db_path": db_path})
+        except Exception:
+            pass
     except Exception as e:
         st.session_state.save_message = f"Error saving file: {e}"
         raise
+
+
+def _config_path() -> str:
+    """Return the path to the local config file used to persist the db_path.
+
+    We store a tiny JSON file in the user's home directory so the app can
+    remember the last-used path between runs.
+    """
+    return os.path.join(os.path.expanduser("~"), ".cardtracker_config.json")
+
+
+def load_config() -> Dict[str, Any]:
+    """Load config dict from disk, return empty dict if none."""
+    try:
+        p = _config_path()
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def save_config(cfg: Dict[str, Any]) -> None:
+    """Save config dict to disk (best-effort)."""
+    try:
+        p = _config_path()
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+    except Exception:
+        pass
 
 
 def validate_date(date_str: str) -> bool:
@@ -367,6 +407,10 @@ def main() -> None:
         else os.path.expanduser("~/Library/Application Support/CardTracker/cards.json")
     )
 
+    # Load persisted config (remember last saved db_path)
+    _cfg = load_config()
+    persisted_db = _cfg.get("db_path") if isinstance(_cfg, dict) else None
+
     # Data source selection
     st.markdown("## Data Source")
     col_local, col_upload = st.columns([1, 1])
@@ -375,7 +419,7 @@ def main() -> None:
         st.subheader("Local File")
         db_path_input = st.text_input(
             "File path",
-            value=DEFAULT_DB_PATH,
+            value=persisted_db or DEFAULT_DB_PATH,
             key="db_path_input",
         )
 
